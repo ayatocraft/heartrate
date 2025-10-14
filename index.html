@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ヘルスモニター (最終安定版)</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #f0f2f5; --card-bg-color: #ffffff; --text-color: #333333;
+            --secondary-text-color: #666666; --primary-color: #4285F4; --danger-color: #EA4335;
+            --shadow-color: rgba(0, 0, 0, 0.1); --icon-color: #ffffff; --border-color: #e0e0e0;
+            --stress-low: #34A853; --stress-medium: #FBBC05; --stress-high: #EA4335;
+            --grid-color: rgba(0, 0, 0, 0.1);
+        }
+        body.dark-theme {
+            --bg-color: #121212; --card-bg-color: #1e1e1e; --text-color: #e0e0e0;
+            --secondary-text-color: #aaaaaa; --primary-color: #8ab4f8; --danger-color: #f28b82;
+            --shadow-color: rgba(0, 0, 0, 0.3); --icon-color: #1e1e1e; --border-color: #333333;
+            --stress-low: #81c995; --stress-medium: #fdd663; --stress-high: #f28b82;
+            --grid-color: rgba(255, 255, 255, 0.15);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+        body { font-family: 'Roboto', sans-serif; background-color: var(--bg-color); color: var(--text-color); transition: background-color 0.3s, color 0.3s; -webkit-tap-highlight-color: transparent; }
+        main { max-width: 500px; margin: 0 auto; padding: 1.2rem; min-height: 100%; display: flex; flex-direction: column; }
+        .screen { display: none; flex-direction: column; flex-grow: 1; gap: 1.2rem; }
+        .screen.active { display: flex; }
+        header { display: flex; justify-content: space-between; align-items: center; }
+        h1 { font-size: 1.8rem; font-weight: 700; }
+        .icon-button { font-size: 2rem; cursor: pointer; padding: 0.5rem; border-radius: 50%; transition: background-color 0.2s; }
+        .card-container { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .card { background-color: var(--card-bg-color); border-radius: 16px; padding: 1.5rem; box-shadow: 0 4px 12px var(--shadow-color); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s, opacity 0.3s, filter 0.3s; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.5rem; }
+        .card.disabled { opacity: 0.5; filter: grayscale(80%); pointer-events: none; cursor: not-allowed; }
+        .card-icon { width: 50px; height: 50px; border-radius: 50%; display: flex; justify-content: center; align-items: center; margin-bottom: 0.5rem; }
+        .card-icon .material-symbols-outlined { font-size: 2rem; color: #ffffff; }
+        .card h2 { font-size: 1.1rem; font-weight: 500; }
+        .button-primary, .button-secondary, .button-danger {
+            border: none; padding: 1rem; border-radius: 28px; font-size: 1rem; font-weight: 500;
+            cursor: pointer; transition: background-color 0.2s, color 0.2s; text-align: center;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .button-primary { background-color: var(--primary-color); color: var(--bg-color); }
+        body.dark-theme .button-primary { color: #202124; }
+        .button-secondary { background-color: transparent; color: var(--primary-color); border: 1px solid var(--border-color); }
+        .button-danger { background-color: var(--danger-color); color: #ffffff; }
+        #measurement-screen { justify-content: space-between; }
+        .measurement-content { display: flex; flex-direction: column; align-items: center; justify-content: space-around; gap: 1rem; flex-grow: 1; }
+        .measurement-instructions { text-align: center; color: var(--secondary-text-color); }
+        .measurement-display { text-align: center; }
+        .measurement-display #current-value { font-size: clamp(3.5rem, 18vw, 5rem); font-weight: 700; line-height: 1; }
+        .measurement-display #unit { font-size: 1.5rem; color: var(--secondary-text-color); margin-left: 0.5rem; }
+        .measurement-status { text-align: center; color: var(--secondary-text-color); height: 2.4em; font-size: 0.9rem; margin-top: -0.5rem; }
+        .video-container { width: 30vw; max-width: 120px; aspect-ratio: 1 / 1; border-radius: 50%; overflow: hidden; position: relative; border: 4px solid var(--primary-color); }
+        #video-preview { width: 100%; height: 100%; object-fit: cover; }
+        .timer { text-align: center; font-size: 1.2rem; padding: 0.5rem 0; }
+        #waveform-canvas { width: 100%; height: 80px; background-color: var(--card-bg-color); border-radius: 8px; }
+        .result-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; text-align: center; }
+        .result-item-stress .stress-value { font-size: 4rem; font-weight: 700; line-height: 1; }
+        .result-item-stress .stress-category { font-size: 1.5rem; font-weight: 500; margin: 0.5rem 0; }
+        .result-item-stress .stress-category.low { color: var(--stress-low); }
+        .result-item-stress .stress-category.medium { color: var(--stress-medium); }
+        .result-item-stress .stress-category.high { color: var(--stress-high); }
+        .result-item-stress .hrv-info { font-size: 0.9rem; color: var(--secondary-text-color); }
+        .result-grid-hr { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; text-align: center; }
+        .result-item p { font-size: 1rem; color: var(--secondary-text-color); }
+        .result-item span { font-size: 2.5rem; font-weight: 500; }
+        .disclaimer { background-color: var(--card-bg-color); border-radius: 12px; padding: 1rem; text-align: center; font-size: 0.9rem; color: var(--secondary-text-color); }
+        .chart-container { background-color: var(--card-bg-color); border-radius: 16px; padding: 1rem; box-shadow: 0 4px 12px var(--shadow-color); }
+        #history-screen h2 { font-size: 1.2rem; text-align: center; color: var(--secondary-text-color); margin-top: 1rem; margin-bottom: -0.5rem;}
+        .settings-group { background-color: var(--card-bg-color); border-radius: 16px; padding: 1.5rem; box-shadow: 0 4px 12px var(--shadow-color); }
+        .setting-item { display: flex; justify-content: space-between; align-items: center; }
+        .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border-color); transition: .4s; border-radius: 28px; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--primary-color); }
+        input:checked + .slider:before { transform: translateX(22px); }
+        #ecg-screen { justify-content: center; }
+        #ecg-canvas { width: 100%; height: 200px; background-color: var(--card-bg-color); border-radius: 8px; }
+        .ecg-display { position: absolute; top: 2rem; right: 2rem; text-align: right; }
+        .ecg-display span { font-size: 2.5rem; font-weight: 500; color: var(--stress-low); }
+        .ecg-display p { font-size: 1rem; color: var(--secondary-text-color); }
+    </style>
+</head>
+<body>
+    <main>
+        <!-- Home Screen -->
+        <div id="home-screen" class="screen active">
+            <header><h1>ヘルスモニター</h1><span id="settings-btn" class="material-symbols-outlined icon-button">settings</span></header>
+            <p style="color: var(--secondary-text-color);">今日の健康状態をチェックしましょう。</p>
+            <div class="card-container">
+                <div class="card" id="start-hr-btn"><div class="card-icon" style="background-color: #EA4335;"><span class="material-symbols-outlined">favorite</span></div><h2>心拍数</h2></div>
+                <div class="card" id="start-stress-btn"><div class="card-icon" style="background-color: #4285F4;"><span class="material-symbols-outlined">sentiment_calm</span></div><h2>ストレス</h2></div>
+                <div class="card" id="start-ecg-btn"><div class="card-icon" style="background-color: #34A853;"><span class="material-symbols-outlined">cardiology</span></div><h2>リズムストリップ</h2></div>
+                <div class="card" id="show-history-btn"><div class="card-icon" style="background-color: #FBBC05;"><span class="material-symbols-outlined">bar_chart</span></div><h2>測定履歴</h2></div>
+            </div>
+        </div>
+
+        <!-- Measurement Screen -->
+        <div id="measurement-screen" class="screen"> <h2 id="measurement-title" style="text-align: center; flex-shrink: 0;">測定中...</h2> <div class="measurement-content"> <div class="measurement-display"><span id="current-value">--</span><span id="unit">BPM</span></div> <p id="measurement-status" class="measurement-status"></p> <div class="measurement-instructions"><p id="measurement-sub-instruction"></p></div> <canvas id="waveform-canvas"></canvas> <div class="video-container"><video id="video-preview" playsinline autoplay muted></video></div> <div class="timer"><p>残り時間: <span id="timer-display">30</span>秒</p></div> </div> <button id="stop-measurement-btn" class="button-danger" style="flex-shrink: 0;"><span class="material-symbols-outlined">stop_circle</span>中止する</button> <canvas id="canvas" style="display: none;"></canvas> </div>
+        
+        <!-- Rhythm Strip Screen -->
+        <div id="ecg-screen" class="screen"> <header> <span id="back-from-ecg-btn" class="material-symbols-outlined icon-button">arrow_back</span> <h1>リズムストリップ</h1> </header> <div class="ecg-display"> <span id="ecg-bpm">--</span><p>BPM</p> </div> <canvas id="ecg-canvas"></canvas> <p class="disclaimer" style="margin-top: 1rem;">注意: これは医療用の心電図(ECG)ではなく、脈波(PPG)を視覚化したものです。</p> </div>
+
+        <!-- Result Screen -->
+        <div id="result-screen" class="screen"> <div style="flex-grow: 1; display: flex; flex-direction: column; justify-content: center; gap: 1.5rem;"> <h2 id="result-title" style="text-align: center;">測定結果</h2> <div id="result-display-container"></div> <div class="disclaimer"><p><strong>注意:</strong> この値は推定値であり、医療目的には使用できません。</p></div> </div> <button id="ok-btn" class="button-primary"><span class="material-symbols-outlined">check_circle</span>OK</button> </div>
+        
+        <!-- History Screen -->
+        <div id="history-screen" class="screen"> <header><span id="back-to-home-btn" class="material-symbols-outlined icon-button">arrow_back</span><h1>測定履歴</h1></header> <h2>心拍数</h2> <div class="chart-container"><canvas id="hr-history-chart"></canvas></div> <h2>ストレスレベル</h2> <div class="chart-container"><canvas id="stress-history-chart"></canvas></div> <p id="chart-info" style="text-align: center; font-size: 0.8rem; color: var(--secondary-text-color);"></p> <button id="export-hr-chart-btn" class="button-secondary"><span class="material-symbols-outlined">download</span>心拍数グラフを書き出し</button> <button id="export-stress-chart-btn" class="button-secondary"><span class="material-symbols-outlined">download</span>ストレスグラフを書き出し</button> </div>
+
+        <!-- Settings Screen -->
+        <div id="settings-screen" class="screen">
+             <header><span id="back-from-settings-btn" class="material-symbols-outlined icon-button">arrow_back</span><h1>設定</h1></header>
+             <div class="settings-group">
+                <h3>テーマ</h3>
+                <div class="radio-group" style="margin-top: 1rem;"><input type="radio" id="light-theme" name="theme" value="light"><label for="light-theme">ライト</label><input type="radio" id="dark-theme" name="theme" value="dark"><label for="dark-theme">ダーク</label></div>
+            </div>
+             <div class="settings-group">
+                <h3>カメラ</h3>
+                <div class="radio-group" style="margin-top: 1rem;"><input type="radio" id="rear-camera" name="camera" value="environment"><label for="rear-camera">背面</label><input type="radio" id="front-camera" name="camera" value="user"><label for="front-camera">前面</label></div>
+            </div>
+            <div class="settings-group">
+                <h3>実験的な機能</h3>
+                <div class="setting-item" style="margin-top: 1rem;">
+                    <label for="stress-toggle">ストレス測定 (不安定な機能)</label>
+                    <label class="switch">
+                        <input type="checkbox" id="stress-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- DOM Elements ---
+        const screens = document.querySelectorAll('.screen'), startHrBtn = document.getElementById('start-hr-btn'),
+            startStressBtn = document.getElementById('start-stress-btn'), settingsBtn = document.getElementById('settings-btn'),
+            showHistoryBtn = document.getElementById('show-history-btn'), stopMeasurementBtn = document.getElementById('stop-measurement-btn'),
+            okBtn = document.getElementById('ok-btn'), backToHomeBtn = document.getElementById('back-to-home-btn'),
+            exportHrChartBtn = document.getElementById('export-hr-chart-btn'), exportStressChartBtn = document.getElementById('export-stress-chart-btn'), 
+            backFromSettingsBtn = document.getElementById('back-from-settings-btn'),
+            startEcgBtn = document.getElementById('start-ecg-btn'), backFromEcgBtn = document.getElementById('back-from-ecg-btn'),
+            measurementTitle = document.getElementById('measurement-title'), currentValueDisplay = document.getElementById('current-value'),
+            unitDisplay = document.getElementById('unit'), timerDisplay = document.getElementById('timer-display'),
+            videoPreview = document.getElementById('video-preview'), resultTitle = document.getElementById('result-title'),
+            resultDisplayContainer = document.getElementById('result-display-container'), themeRadios = document.querySelectorAll('input[name="theme"]'),
+            cameraRadios = document.querySelectorAll('input[name="camera"]'), 
+            stressToggle = document.getElementById('stress-toggle'),
+            hrHistoryChartCanvas = document.getElementById('hr-history-chart').getContext('2d'),
+            stressHistoryChartCanvas = document.getElementById('stress-history-chart').getContext('2d'),
+            waveformCanvas = document.getElementById('waveform-canvas'), waveformCtx = waveformCanvas.getContext('2d'),
+            ecgCanvas = document.getElementById('ecg-canvas'), ecgCtx = ecgCanvas.getContext('2d'), ecgBpm = document.getElementById('ecg-bpm'),
+            measurementStatus = document.getElementById('measurement-status'),
+            measurementSubInstruction = document.getElementById('measurement-sub-instruction'),
+            chartInfo = document.getElementById('chart-info');
+        let hrHistoryChart, stressHistoryChart;
+
+        // --- State & Config ---
+        let settings = { theme: 'light', camera: 'environment', experimentalStress: false };
+        let measurementType = 'hr', currentStream, timerInterval, animationFrameId, isFirstReadingDone = false, isStopping = false;
+        const MEASUREMENT_DURATION = 30;
+        const dataBuffer = [], processedData = [], peakTimestamps = [], displayValueBuffer = [], peakMarkers = [];
+        let finalResult = {};
+
+        const showScreen = id => { screens.forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); };
+        
+        const stopAllStreams = () => {
+            if (currentStream) { currentStream.getTracks().forEach(t => t.stop()); currentStream = null; }
+            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            if (animationFrameId) { cancelAnimationFrame(animationFrameId); animationFrameId = null; }
+        };
+        
+        const getHistory = () => JSON.parse(localStorage.getItem('healthMonitorHistory')) || [];
+        const saveResult = () => { if (!finalResult || finalResult.quality === 'error') return; localStorage.setItem('healthMonitorHistory', JSON.stringify([...getHistory(), { type: measurementType, avg: finalResult.avg, max: finalResult.max || null, min: finalResult.min || null, timestamp: new Date().toISOString() }])); };
+        
+        const updateUiBasedOnSettings = () => {
+            document.body.classList.toggle('dark-theme', settings.theme === 'dark');
+            document.querySelector(`input[name="theme"][value="${settings.theme}"]`).checked = true;
+            document.querySelector(`input[name="camera"][value="${settings.camera}"]`).checked = true;
+            stressToggle.checked = settings.experimentalStress;
+            startStressBtn.classList.toggle('disabled', !settings.experimentalStress);
+        };
+        const loadSettings = () => { let s = JSON.parse(localStorage.getItem('healthMonitorSettings')); if (s) { if (s.experimentalStress === undefined) s.experimentalStress = false; settings = s; } updateUiBasedOnSettings(); };
+        const saveSettings = () => { localStorage.setItem('healthMonitorSettings', JSON.stringify(settings)); };
+
+        const initOrUpdateCharts = () => { const MAX_CHART_POINTS = 20; const fullHistory = getHistory(); const history = fullHistory.length > MAX_CHART_POINTS ? fullHistory.slice(-MAX_CHART_POINTS) : fullHistory; chartInfo.textContent = fullHistory.length > MAX_CHART_POINTS ? `最新${MAX_CHART_POINTS}件のデータを表示しています。` : ''; const labels = history.map(d => new Date(d.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute:'2-digit' })); if (hrHistoryChart) hrHistoryChart.destroy(); if (stressHistoryChart) stressHistoryChart.destroy(); hrHistoryChart = new Chart(hrHistoryChartCanvas, { type: 'line', data: { labels: labels, datasets: [{ label: '心拍数 (BPM)', data: history.map(d => d.type === 'hr' ? d.avg : null), borderColor: '#EA4335', backgroundColor: 'rgba(234, 67, 53, 0.1)', fill: true, tension: 0.2, spanGaps: true }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { suggestedMin: 40, suggestedMax: 140 } } } }); stressHistoryChart = new Chart(stressHistoryChartCanvas, { type: 'line', data: { labels: labels, datasets: [{ label: 'ストレスレベル', data: history.map(d => d.type === 'stress' ? d.avg : null), borderColor: '#4285F4', backgroundColor: 'rgba(66, 133, 244, 0.1)', fill: true, tension: 0.2, spanGaps: true }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { suggestedMin: 0, suggestedMax: 100 } } } }); };
+        
+        const startCommon = async () => { stopAllStreams(); isStopping = false; dataBuffer.length = 0; processedData.length = 0; peakTimestamps.length = 0; displayValueBuffer.length = 0; peakMarkers.length = 0; isFirstReadingDone = false; try { const constraints = { video: { facingMode: settings.camera, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }; currentStream = await navigator.mediaDevices.getUserMedia(constraints); videoPreview.srcObject = currentStream; await videoPreview.play(); return true; } catch (err) { console.error("Camera Error:", err); alert("カメラにアクセスできませんでした。ブラウザの設定でカメラへのアクセスを許可してください。"); showScreen('home-screen'); return false; } };
+
+        const startMeasurement = async (type) => { measurementType = type; currentValueDisplay.textContent = '--'; measurementStatus.innerHTML = '信号を検出中...'; measurementTitle.textContent = type === 'hr' ? '心拍数を測定中...' : 'ストレスを測定中...'; unitDisplay.textContent = type === 'hr' ? 'BPM' : 'ms'; measurementSubInstruction.innerHTML = type === 'hr' ? '指を動かさないでください' : 'この数値の変動が大きいほどリラックスしています'; showScreen('measurement-screen'); if (await startCommon()) { startMeasurementProcessing(); startTimer(); } };
+        
+        const startRhythmStrip = async () => { ecgBpm.textContent = '--'; showScreen('ecg-screen'); if (await startCommon()) { startRhythmStripProcessing(); } };
+
+        const stopMeasurement = (completed = true) => { if (isStopping) return; isStopping = true; stopAllStreams(); if (completed) { calculateResults(); showResultScreen(); } else { showScreen('home-screen'); } };
+
+        const startTimer = () => { let timeLeft = MEASUREMENT_DURATION; timerDisplay.textContent = timeLeft; timerInterval = setInterval(() => { timeLeft--; if (timeLeft < 0) { stopMeasurement(true); return; } timerDisplay.textContent = timeLeft; if (timeLeft === 20 && !isFirstReadingDone) { measurementStatus.innerHTML = '信号を検出できません。<br>指の当て方を変えてみてください。'; } }, 1000); };
+        
+        const processSignal = () => {
+            const windowSize = 20;
+            if (dataBuffer.length >= windowSize) { const movingAvg = dataBuffer.slice(-windowSize).reduce((a,b)=>a+b, 0) / windowSize; const detrended = dataBuffer[dataBuffer.length - 1] - movingAvg; processedData.push(detrended); if(processedData.length > 300) processedData.shift(); }
+            if (processedData.length > 5) { const i = processedData.length - 3; if(i > 0 && processedData[i-1] !== undefined && processedData[i+1] !== undefined) { const p = processedData[i]; if (processedData[i-1] < p && processedData[i+1] < p) { const mean = processedData.reduce((a, b) => a + b, 0) / processedData.length; const stdDev = Math.sqrt(processedData.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b) / processedData.length); const threshold = mean + 0.5 * stdDev; if (p > threshold) { const now = Date.now(), lastPeakTime = peakTimestamps.length > 0 ? peakTimestamps[peakTimestamps.length - 1].time : 0; if (now - lastPeakTime > 250) { peakTimestamps.push({ time: now }); peakMarkers.push({ x: processedData.length - 3, y: p, alpha: 1.0 }); if (peakTimestamps.length > 120) peakTimestamps.shift(); } } } } }
+        };
+
+        const startMeasurementProcessing = () => {
+            const hiddenCanvas = document.getElementById('canvas'), hiddenCtx = hiddenCanvas.getContext('2d', { willReadFrequently: true });
+            hiddenCanvas.width = videoPreview.videoWidth; hiddenCanvas.height = videoPreview.videoHeight;
+            const processFrame = () => { if (!currentStream) return; try { hiddenCtx.drawImage(videoPreview, 0, 0, hiddenCanvas.width, hiddenCanvas.height); const imageData = hiddenCtx.getImageData(hiddenCanvas.width*0.4, hiddenCanvas.height*0.4, hiddenCanvas.width*0.2, hiddenCanvas.height*0.2); let r = 0; for (let i = 0; i < imageData.data.length; i += 4) r += imageData.data[i]; dataBuffer.push(r / (imageData.data.length / 4)); if (dataBuffer.length > 300) dataBuffer.shift(); processSignal(); if (peakTimestamps.length >= 2) { const lastInterval = peakTimestamps[peakTimestamps.length - 1].time - peakTimestamps[peakTimestamps.length - 2].time; if (lastInterval > 250 && lastInterval < 2000) { const currentValue = (measurementType === 'hr') ? (60000 / lastInterval) : lastInterval; displayValueBuffer.push(currentValue); if (displayValueBuffer.length > 3) displayValueBuffer.shift(); const smoothedValue = displayValueBuffer.reduce((a, b) => a + b, 0) / displayValueBuffer.length; if(!isNaN(smoothedValue)) currentValueDisplay.textContent = Math.round(smoothedValue); if (!isFirstReadingDone) { isFirstReadingDone = true; measurementStatus.textContent = ''; } } } drawWaveform(); } catch (e) { console.error("Error in measurement loop:", e); } animationFrameId = requestAnimationFrame(processFrame); };
+            animationFrameId = requestAnimationFrame(processFrame);
+        };
+
+        const startRhythmStripProcessing = () => {
+            const hiddenCanvas = document.getElementById('canvas'), hiddenCtx = hiddenCanvas.getContext('2d', { willReadFrequently: true });
+            hiddenCanvas.width = videoPreview.videoWidth; hiddenCanvas.height = videoPreview.videoHeight;
+            const processFrame = () => { if (!currentStream) return; try { hiddenCtx.drawImage(videoPreview, 0, 0, hiddenCanvas.width, hiddenCanvas.height); const imageData = hiddenCtx.getImageData(hiddenCanvas.width*0.4, hiddenCanvas.height*0.4, hiddenCanvas.width*0.2, hiddenCanvas.height*0.2); let r = 0; for (let i = 0; i < imageData.data.length; i += 4) r += imageData.data[i]; dataBuffer.push(r / (imageData.data.length / 4)); if (dataBuffer.length > 300) dataBuffer.shift(); processSignal(); if(peakTimestamps.length >= 2){ const lastInterval = peakTimestamps[peakTimestamps.length - 1].time - peakTimestamps[peakTimestamps.length - 2].time; if(lastInterval > 250 && lastInterval < 2000){ displayValueBuffer.push(60000 / lastInterval); if(displayValueBuffer.length > 3) displayValueBuffer.shift(); const smoothedBpm = displayValueBuffer.reduce((a,b)=>a+b,0) / displayValueBuffer.length; ecgBpm.textContent = Math.round(smoothedBpm); } } drawRhythmStripWaveform(); } catch (e) { console.error("Error in rhythm strip loop:", e); } animationFrameId = requestAnimationFrame(processFrame); };
+            animationFrameId = requestAnimationFrame(processFrame);
+        };
+        
+        const drawWaveform = () => { const data = processedData; waveformCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height); const { width, height } = waveformCanvas; if (data.length < 2) return; const recentData = data.slice(-90); const maxVal = Math.max(...recentData.map(Math.abs), 0.5); const computedStyles = getComputedStyle(document.body); const lineColor = computedStyles.getPropertyValue('--primary-color').trim(); const rgb = lineColor.startsWith('#') ? [parseInt(lineColor.substr(1,2),16), parseInt(lineColor.substr(3,2),16), parseInt(lineColor.substr(5,2),16)] : lineColor.match(/\d+/g).map(Number); const gradient = waveformCtx.createLinearGradient(0, 0, 0, height); gradient.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4)`); gradient.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`); waveformCtx.beginPath(); waveformCtx.moveTo(0, height); for (let i = 0; i < data.length; i++) { const x = (i / (data.length - 1)) * width, y = height / 2 - (data[i] / maxVal) * (height*0.48); waveformCtx.lineTo(x, y); } waveformCtx.lineTo(width, height); waveformCtx.closePath(); waveformCtx.fillStyle = gradient; waveformCtx.fill(); waveformCtx.beginPath(); for (let i = 0; i < data.length; i++) { const x = (i / (data.length - 1)) * width, y = height / 2 - (data[i] / maxVal) * (height*0.48); i === 0 ? waveformCtx.moveTo(x, y) : waveformCtx.lineTo(x, y); } waveformCtx.strokeStyle = lineColor; waveformCtx.lineWidth = 2; waveformCtx.stroke(); peakMarkers.forEach(marker => { const x = (marker.x / (data.length - 1)) * width; const y = height / 2 - (marker.y / maxVal) * (height * 0.48); waveformCtx.beginPath(); waveformCtx.arc(x, y, 5, 0, 2 * Math.PI); waveformCtx.fillStyle = `rgba(234, 67, 53, ${marker.alpha})`; waveformCtx.fill(); marker.alpha -= 0.05; }); for(let i = peakMarkers.length - 1; i >= 0; i--) { if(peakMarkers[i].alpha <= 0) peakMarkers.splice(i, 1); } };
+        
+        const drawRhythmStripWaveform = () => { const data = processedData; ecgCtx.clearRect(0, 0, ecgCanvas.width, ecgCanvas.height); const { width, height } = ecgCanvas; const computedStyles = getComputedStyle(document.body); const gridColor = computedStyles.getPropertyValue('--grid-color'); const waveColor = computedStyles.getPropertyValue('--stress-low'); ecgCtx.strokeStyle = gridColor; ecgCtx.lineWidth = 0.5; for(let x = 0; x < width; x += 10) { ecgCtx.beginPath(); ecgCtx.moveTo(x, 0); ecgCtx.lineTo(x, height); ecgCtx.stroke(); } for(let y = 0; y < height; y += 10) { ecgCtx.beginPath(); ecgCtx.moveTo(0, y); ecgCtx.lineTo(width, y); ecgCtx.stroke(); } if (data.length < 2) return; const recentData = data.slice(-60); const maxVal = Math.max(...recentData.map(Math.abs), 0.5); ecgCtx.strokeStyle = waveColor; ecgCtx.lineWidth = 2; ecgCtx.shadowColor = waveColor; ecgCtx.shadowBlur = 4; ecgCtx.beginPath(); for (let i = 0; i < data.length; i++) { const x = (i / (300 - 1)) * width; const y = height / 2 - (data[i] / maxVal) * (height * 0.4); i === 0 ? ecgCtx.moveTo(x, y) : ecgCtx.lineTo(x, y); } ecgCtx.stroke(); ecgCtx.shadowColor = 'transparent'; };
+
+        const calculateResults = () => {
+            const allIntervals = [];
+            for (let i = 1; i < peakTimestamps.length; i++) { const interval = peakTimestamps[i].time - peakTimestamps[i-1].time; if (interval > 250 && interval < 2000) allIntervals.push(interval); }
+            finalResult = { avg: null, quality: 'error' };
+            const minHrIntervals = 3; const minStressIntervals = 5;
+            if (measurementType === 'hr') {
+                if (allIntervals.length >= minHrIntervals) {
+                    const sorted = [...allIntervals].sort((a,b) => a-b), q1 = sorted[Math.floor(sorted.length / 4)], q3 = sorted[Math.floor(sorted.length * 3 / 4)], iqr = q3 - q1, lowerBound = q1 - 1.5 * iqr, upperBound = q3 + 1.5 * iqr;
+                    let cleanIntervals = allIntervals.filter(x => (x >= lowerBound && x <= upperBound));
+                    if (cleanIntervals.length < minHrIntervals) cleanIntervals = allIntervals;
+                    const bpms = cleanIntervals.map(i => 60000 / i);
+                    const quality = (cleanIntervals.length / allIntervals.length < 0.7 || allIntervals.length < 10) ? 'low' : 'high';
+                    finalResult = { avg: Math.round(bpms.reduce((a,b)=>a+b,0) / bpms.length), max: Math.round(Math.max(...bpms)), min: Math.round(Math.min(...bpms)), quality: quality };
+                }
+            } else if (measurementType === 'stress') {
+                if (allIntervals.length >= minStressIntervals) {
+                    const mean = allIntervals.reduce((a,b)=>a+b,0) / allIntervals.length;
+                    const sdnn = Math.sqrt(allIntervals.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b) / allIntervals.length);
+                    const relaxation = Math.min(100, (sdnn / 60) * 100);
+                    finalResult = { avg: Math.round(100 - relaxation), sdnn: Math.round(sdnn), quality: allIntervals.length >= 15 ? 'high' : 'low', usedMetric: 'SDNN' };
+                }
+            }
+        };
+        
+        const showResultScreen = () => {
+            const disclaimerEl = document.querySelector('#result-screen .disclaimer p');
+            resultDisplayContainer.innerHTML = ''; let titleSuffix = '';
+            if (finalResult.quality === 'low') {
+                titleSuffix = ' (参考値)';
+                disclaimerEl.innerHTML = `信号が不安定だったため、結果はあくまで参考です。より正確に測るには、指を動かさずに再測定してください。`;
+            } else { disclaimerEl.innerHTML = '<strong>注意:</strong> この値は推定値であり、医療目的には使用できません。'; }
+            if (finalResult.quality === 'error' || finalResult.avg === null) {
+                resultTitle.textContent = '測定エラー';
+                resultDisplayContainer.innerHTML = `<div class="result-grid-hr"><div class="result-item"><p>--</p></div></div>`;
+                disclaimerEl.innerHTML = '安定した信号を十分に検出できませんでした。<br>指をカメラに優しく当て、動かさずに再測定してください。';
+            } else if (measurementType === 'hr') {
+                resultTitle.textContent = '心拍数 測定結果' + titleSuffix;
+                resultDisplayContainer.innerHTML = `<div class="result-grid-hr"><div class="result-item"><p>平均</p><span>${finalResult.avg}</span></div><div class="result-item"><p>最大</p><span>${finalResult.max}</span></div><div class="result-item"><p>最小</p><span>${finalResult.min}</span></div></div>`;
+            } else if (measurementType === 'stress') {
+                resultTitle.textContent = 'ストレス 測定結果' + titleSuffix;
+                const level = finalResult.avg; let category, categoryClass;
+                if (level <= 33) { category = '低い'; categoryClass = 'low'; }
+                else if (level <= 66) { category = 'ふつう'; categoryClass = 'medium'; }
+                else { category = '高い'; categoryClass = 'high'; }
+                resultDisplayContainer.innerHTML = `<div class="result-grid"><div class="result-item-stress"><p class="stress-label">ストレスレベル</p><span class="stress-value">${level}</span><p class="stress-category ${categoryClass}">${category}</p><p class="hrv-info">HRV (SDNN): ${finalResult.sdnn} ms</p></div></div>`;
+            }
+            showScreen('result-screen');
+        };
+        
+        startHrBtn.addEventListener('click', () => startMeasurement('hr'));
+        startStressBtn.addEventListener('click', () => startMeasurement('stress'));
+        startEcgBtn.addEventListener('click', startRhythmStrip);
+        stopMeasurementBtn.addEventListener('click', () => stopMeasurement(false));
+        backFromEcgBtn.addEventListener('click', () => { stopAllStreams(); showScreen('home-screen'); });
+        okBtn.addEventListener('click', () => { saveResult(); showScreen('home-screen'); });
+        settingsBtn.addEventListener('click', () => showScreen('settings-screen'));
+        backFromSettingsBtn.addEventListener('click', () => showScreen('home-screen'));
+        showHistoryBtn.addEventListener('click', () => { initOrUpdateCharts(); showScreen('history-screen'); });
+        backToHomeBtn.addEventListener('click', () => showScreen('home-screen'));
+        exportHrChartBtn.addEventListener('click', () => { if(!hrHistoryChart || hrHistoryChart.data.labels.length === 0) return; const l=document.createElement('a'); l.href=hrHistoryChart.toBase64Image(); l.download=`hr_history_${new Date().toISOString().split('T')[0]}.png`; l.click(); });
+        exportStressChartBtn.addEventListener('click', () => { if(!stressHistoryChart || stressHistoryChart.data.labels.length === 0) return; const l=document.createElement('a'); l.href=stressHistoryChart.toBase64Image(); l.download=`stress_history_${new Date().toISOString().split('T')[0]}.png`; l.click(); });
+        themeRadios.forEach(r => r.addEventListener('change', e => { settings.theme=e.target.value; saveSettings(); updateUiBasedOnSettings(); }));
+        cameraRadios.forEach(r => r.addEventListener('change', e => { settings.camera=e.target.value; saveSettings(); }));
+        stressToggle.addEventListener('change', e => { settings.experimentalStress = e.target.checked; saveSettings(); updateUiBasedOnSettings(); });
+        
+        loadSettings();
+    });
+    </script>
+</body>
+</html>
